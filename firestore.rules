@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+
+    function isSignedIn() { return request.auth != null; }
+    function existing() { return resource.data; }
+    function incoming() { return request.resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$'); }
+    
+    // Auth & relations
+    function getMyUser() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isLinkedPartner(uid) {
+      return isSignedIn() 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        && getMyUser().linkedUserId == uid; 
+    }
+    function hasReadAccess(uid) { return isOwner(uid) || isLinkedPartner(uid); }
+
+    // User Profile
+    function isValidUser(data) {
+      return data.userId == request.auth.uid
+        && data.email is string && data.email.size() <= 256
+        && data.mode is string && data.mode in ['solo', 'wifey', 'hubby']
+        && (!('linkedUserId' in data) || data.linkedUserId == null || (data.linkedUserId is string && data.linkedUserId.size() <= 128))
+        && (!('username' in data) || data.username == null || (data.username is string && data.username.size() <= 64))
+        && (!('avatar' in data) || data.avatar == null || (data.avatar is string && data.avatar.size() <= 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow create: if isOwner(userId) 
+                    && isValidId(userId)
+                    && isValidUser(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time
+                    && incoming().keys().hasAll(['userId', 'email', 'mode', 'createdAt', 'updatedAt'])
+                    && incoming().keys().size() <= 8; // Max keys
+                    
+      allow update: if isOwner(userId)
+                    && isValidId(userId)
+                    && isValidUser(incoming())
+                    && incoming().updatedAt == request.time
+                    && incoming().userId == existing().userId
+                    && (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt)
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['mode', 'linkedUserId', 'username', 'avatar', 'updatedAt']);
+                    
+      allow get: if isValidId(userId) && hasReadAccess(userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid; // users can only list themselves if asked
+      
+      // Cycle Records
+      function isValidCycleRecord(data) {
+        return data.userId == userId
+          && data.start is string && data.start.size() <= 32
+          && (!('end' in data) || data.end == null || (data.end is string && data.end.size() <= 32))
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+      match /cycleRecords/{recordId} {
+        allow create: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(recordId)
+                      && isValidCycleRecord(incoming())
+                      && incoming().createdAt == request.time
+                      && incoming().updatedAt == request.time
+                      && incoming().keys().hasAll(['userId', 'start', 'createdAt', 'updatedAt'])
+                      && incoming().keys().size() <= 5;
+                      
+        allow update: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(recordId)
+                      && isValidCycleRecord(incoming())
+                      && incoming().updatedAt == request.time
+                      && incoming().userId == existing().userId
+                      && incoming().createdAt == existing().createdAt
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['start', 'end', 'updatedAt']);
+                      
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(recordId);
+        allow get: if isValidId(userId) && isValidId(recordId) && hasReadAccess(userId);
+        allow list: if isValidId(userId) && hasReadAccess(userId) && resource.data.userId == userId;
+      }
+
+      // Symptom Logs
+      function isValidSymptomLog(data) {
+        return data.userId == userId
+          && data.date is string && data.date.size() <= 32
+          && data.mood is string && data.mood.size() <= 64
+          && data.energy is string && data.energy.size() <= 64
+          && data.flow is string && data.flow.size() <= 64
+          && data.discomfort is list && data.discomfort.size() <= 20 
+          && (data.discomfort.size() == 0 || data.discomfort[0] is string)
+          && (!('partnerNote' in data) || data.partnerNote == null || (data.partnerNote is string && data.partnerNote.size() <= 1000))
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+      match /symptomLogs/{logId} {
+        allow create: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(logId)
+                      && isValidSymptomLog(incoming())
+                      && incoming().createdAt == request.time
+                      && incoming().updatedAt == request.time
+                      && incoming().keys().hasAll(['userId', 'date', 'mood', 'energy', 'flow', 'discomfort', 'createdAt', 'updatedAt'])
+                      && incoming().keys().size() <= 9;
+                      
+        allow update: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(logId)
+                      && isValidSymptomLog(incoming())
+                      && incoming().updatedAt == request.time
+                      && incoming().userId == existing().userId
+                      && incoming().createdAt == existing().createdAt
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['mood', 'energy', 'flow', 'discomfort', 'partnerNote', 'updatedAt']);
+                      
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+        allow get: if isValidId(userId) && isValidId(logId) && hasReadAccess(userId);
+        allow list: if isValidId(userId) && hasReadAccess(userId) && resource.data.userId == userId;
+      }
+      
+      // Settings
+      function isValidSettings(data) {
+        return data.userId == userId
+          && data.reminders is map
+          && (!('timezone' in data) || data.timezone == null || (data.timezone is string && data.timezone.size() <= 64))
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+      match /settings/{settingId} {
+        allow create: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(settingId)
+                      && isValidSettings(incoming())
+                      && incoming().createdAt == request.time
+                      && incoming().updatedAt == request.time
+                      && incoming().keys().hasAll(['userId', 'reminders', 'createdAt', 'updatedAt'])
+                      && incoming().keys().size() <= 5;
+                      
+        allow update: if isOwner(userId)
+                      && isValidId(userId)
+                      && isValidId(settingId)
+                      && isValidSettings(incoming())
+                      && incoming().updatedAt == request.time
+                      && incoming().userId == existing().userId
+                      && incoming().createdAt == existing().createdAt
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['reminders', 'timezone', 'updatedAt']);
+                      
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+        allow get: if isValidId(userId) && isValidId(settingId) && hasReadAccess(userId);
+        allow list: if isValidId(userId) && hasReadAccess(userId) && resource.data.userId == userId;
+      }
+    }
+  }
+}

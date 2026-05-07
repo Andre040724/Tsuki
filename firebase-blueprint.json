@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The firebase auth UID" },
+        "email": { "type": "string" },
+        "mode": { "type": "string", "enum": ["solo", "girlfriend", "boyfriend"] },
+        "linkingCode": { "type": "string", "description": "Random 6 character code for girlfriends to share with boyfriends" },
+        "linkedUserId": { "type": "string", "description": "If boyfriend, the userId of the girlfriend they are linked to. If girlfriend, the userId of the boyfriend." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "mode", "createdAt", "updatedAt"]
+    },
+    "CycleRecord": {
+      "title": "Cycle Record",
+      "description": "A period cycle start and end date",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "start", "createdAt", "updatedAt"]
+    },
+    "SymptomLog": {
+      "title": "Symptom Log",
+      "description": "Daily symptoms logged",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "description": "YYYY-MM-DD" },
+        "mood": { "type": "string" },
+        "energy": { "type": "string" },
+        "flow": { "type": "string" },
+        "discomfort": { "type": "array", "items": { "type": "string" } },
+        "partnerNote": { "type": "string", "description": "A note for the partner" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "date", "createdAt", "updatedAt"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "User preferences and settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "reminders": { "type": "object" },
+        "timezone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "reminders", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/cycleRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/CycleRecord" },
+      "description": "Cycle records for a user"
+    },
+    "/users/{userId}/symptomLogs/{logId}": {
+      "schema": { "$ref": "#/entities/SymptomLog" },
+      "description": "Daily logged symptoms for a user"
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "User settings stored for a user"
+    }
+  }
+}
