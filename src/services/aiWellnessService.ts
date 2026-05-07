@@ -5,7 +5,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
 
 export interface WellnessInsight {
   headline: string;
@@ -45,6 +45,10 @@ export async function getWellnessInsight(
   `;
 
   try {
+    if (!ai) {
+      if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
+      ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    }
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
